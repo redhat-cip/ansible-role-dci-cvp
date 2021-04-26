@@ -1,0 +1,14 @@
+---
+- name: Clone CVP Operator Test Repo
+  git:
+    version: "{{ dci_cvp_operator_vers }}"
+    repo: "{{ dci_cvp_operator_repo }}"
+    dest: "{{ dci_cvp_cache_dir }}/cvp_operator_repo"
+    force: true
+  # On RHEL8 git clone can sporadically fail with OpenSSL SSL_read:
+  # SSL_ERROR_SYSCALL, errno 104. This is a workaround to try cloning the repo
+  # multiple times.
+  register: dci_cvp_operator_clone
+  retries: 3
+  delay: 10
+...

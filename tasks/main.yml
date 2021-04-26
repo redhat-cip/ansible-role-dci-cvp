@@ -1,0 +1,95 @@
+---
+- name: "Fetch CVP Operator Test Playbooks"
+  include_tasks: fetch_cvp_operator.yml
+
+- name: Create temporary cvp_logs directory
+  tempfile:
+    state: directory
+    suffix: dci_cvp_logs
+  register: dci_cvp_logs
+- set_fact:
+    OO_INSTALL_NAMESPACE: "DCI_CVP"
+    ARTIFACT_DIR: "{{ dci_cvp_logs.path }}"
+
+# Mirror OO_BUNDLE_IMAGE, FIXME
+# - name: "Mirror Bundle image"
+#   include_task: mirror_bundle_image.yml
+#   when: disconnected_mode is defined
+
+# Set Start Time
+- name: "Get Deployment start time"
+  command: "date -u '+%Y-%m-%dT%H:%M:%SZ'"
+  register: dci_cvp_start_time
+- name: "Set Deployment start time"
+  set_fact:
+    deployment_start_time: "{{ dci_cvp_start_time.stdout }}"
+
+# CVP Operator tests
+- name: "Fetch CVP Operator Test Playbooks"
+  include_tasks: run_cvp_operator.yml
+
+# Archive logs
+- name: Archive cvp logs
+  archive:
+    path: "{{ dci_cvp_logs.path }}"
+    dest: "{{ dci_cvp_logs.path }}.tgz"
+
+# Upload logs
+- name: Upload logs to DCI Control Server
+  environment:
+    - DCI_CLIENT_ID: "{{ dci_cvp_client_id }}"
+    - DCI_API_SECRET: "{{ dci_cvp_api_secret }}"
+    - DCI_CS_URL: "{{ dci_cvp_cs_url }}"
+  dci_file:
+    path: "{{ item }}"
+    name: "{{ item | basename }}"
+    job_id: "{{ job_id }}"
+  with_fileglob:
+    - "{{ dci_cvp_logs.path }}/*"
+    - "{{ dci_cvp_logs.path }}.tgz"
+  register: dci_cvp_upload_archive
+
+- name: Set Basename
+  set_fact:
+    dci_cvp_logs_filename: "{{ dci_cvp_logs.path | basename }}.tgz"
+- name: Set external_tests_link
+  set_fact:
+    dci_cvp_external_tests_link: "{{ dci_cvp_cs_url }}/api/v1/files/{{ item.file.id }}/content"
+  loop: "{{ dci_cvp_upload_archive.results }}"
+  when: item.file.name == dci_cvp_logs_filename
+
+# PyxIS submit
+# FIXME
+- name: Submit to PyxIs
+  uri:
+    url: "{{ dci_cvp_catalog_url }}/projects/certification/id/{{ identifier }}/requests/scans"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ Bearer }}"
+    body_format: json
+    body: |
+      {
+        "_links": {
+          "cert_project": {
+            "href": "string"
+          }
+        },
+        "external_tests_link": "{{ dci_cvp_external_tests_link }}",
+        "pull_spec": "{{ OO_BUNDLE_SPEC }}",
+        "tag": "string"
+      }
+  when: dci_cvp_submit is true
+
+- name: Debug external_tests_link
+  debug:
+    var: dci_cvp_external_tests_link
+
+# Clean Up
+- name: "Clean up"
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ dci_cvp_logs.path }}"
+    - "{{ dci_cvp_logs.path }}.tgz"
+...

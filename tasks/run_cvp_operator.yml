@@ -1,0 +1,19 @@
+---
+# Operator subscribe
+- name: "Run operator subscribe step"
+  include_role:
+    name: "{{ dci_cvp_cache_dir }}/cvp_operator_repo/roles/optional-operators-subscribe"
+
+# Collect pull events
+- name: "Parse the collected image pull events"
+  include_role:
+    name: "{{ dci_cvp_cache_dir }}/cvp_operator_repo/roles/collect_modified_images"
+  vars:
+    events_file_path: "{{ dci_cvp_logs.path }}/image_pull_events.json"
+    work_dir: "{{ dci_cvp_logs.path }}"
+
+# scorecard...
+# - name: "Run Scorecard tests for operator bundle"
+#   include_role:
+#     name: "{{ dci_cvp_cache_dir }}/cvp_operator_repo/roles/???"
+...
