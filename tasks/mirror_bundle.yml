@@ -1,0 +1,76 @@
+---
+- name: "Extract Operator Bundle"
+  include_role:
+    name: "{{ dci_cvp_cache_dir }}/cvp_operator_repo/roles/extract_operator_bundle"
+  vars:
+    bundle_image: "{{ dci_cvp_bundle_spec }}"
+
+- name: "Parse the operator bundle image, manifest and metadata"
+  include_role:
+    name: "{{ dci_cvp_cache_dir }}/cvp_operator_repo/roles/parse_operator_bundle"
+
+- name: "Get related containers"
+  set_fact:
+    dci_cvp_related_images: "{{ (csv_vars | from_yaml).spec.relatedImages| default([]) }}"
+
+- name: "Get images"
+  set_fact:
+    dci_cvp_images: "{{ (csv_vars | from_yaml).spec.install.spec.deployments | json_query(query) }}"
+  vars:
+    query: "[*].spec.template.spec.containers[*].image"
+
+- name: Get manifest
+  set_fact:
+    dci_cvp_manifest: "{{ skopeo_inspect_json }}"
+
+- name: Set Channel and Package
+  set_fact:
+    OO_BUNDLE: "{{ dci_cvp_registry_host }}/{{ dci_cvp_bundle_spec | regex_replace('[^/]*/(.+)$', '\\1') }}"
+    OO_CHANNEL: "{{ dci_cvp_manifest.Labels['operators.operatorframework.io.bundle.channel.default.v1'] }}"
+    OO_PACKAGE: "{{ dci_cvp_manifest.Labels['operators.operatorframework.io.bundle.package.v1'] }}"
+- name: Set Index
+  set_fact:
+    OO_INDEX: "{{ OO_BUNDLE | regex_replace('(.+)@sha256:.+$', '\\1-index') }}:{{ dci_cvp_bundle_tag }}"
+
+# quay.io/rh-nfv-int/testpmd-operator-bundle:v0.2.3
+- name: Copy Operator bundle local
+  shell:
+    cmd: >
+      skopeo copy --all --authfile {{ dci_cvp_pullsecret_file }}
+      --dest-tls-verify=false docker://{{ dci_cvp_bundle_spec }}
+      "docker://{{ OO_BUNDLE }}"
+  register: dci_cvp_copy
+  retries: 5
+  delay: 5
+  until:
+    - dci_cvp_copy is not failed
+
+- name: Copy related images
+  shell:
+    cmd: >
+      skopeo copy --all --authfile {{ dci_cvp_pullsecret_file }}
+      --dest-tls-verify=false docker://{{ item }}
+      docker://{{ dci_cvp_registry_host }}/{{ item | regex_replace('[^/]*/(.+)$', '\1') }}
+  register: dci_cvp_copy
+  retries: 5
+  delay: 5
+  loop: "{{ dci_cvp_related_images| map(attribute='image')| list + dci_cvp_images| flatten(1) }}"
+  until:
+    - dci_cvp_copy is not failed
+
+# Generate Catalog Index
+- name: Generate Catalog Index
+  command:
+    cmd: >
+      opm index add --pull-tool podman --bundles {{ OO_BUNDLE }}
+      --tag {{ OO_INDEX }}
+    chdir: "{{ dci_cvp.path }}"
+  environment:
+    - REGISTRY_AUTH_FILE: "{{ dci_cvp_pullsecret_file }}"
+
+
+- name: Push Catalog Index to local registry
+  command:
+    cmd: >
+      podman push --authfile {{ dci_cvp_pullsecret_file }} {{ OO_INDEX }}
+...

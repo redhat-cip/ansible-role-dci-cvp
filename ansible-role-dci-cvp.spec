@@ -26,6 +26,7 @@ chmod 755 %{buildroot}%{_datadir}/dci/roles/dci-cvp
 
 cp -r defaults %{buildroot}%{_datadir}/dci/roles/dci-cvp
 cp -r tasks %{buildroot}%{_datadir}/dci/roles/dci-cvp
+cp -r files %{buildroot}%{_datadir}/dci/roles/dci-cvp
 
 
 %files

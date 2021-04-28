@@ -19,18 +19,19 @@ Here is an example of calling this role:
   include_role:
     name: dci-cvp
   vars:
-    OO_BUNDLE_SPEC:  "{{ dci_cvp_bundle_spec }}"
-    OO_PACKAGE: "{{ dci_cvp_package }}"
-    OO_CHANNEL: "{{ dci_cvp_channel }}"
-    DCI_SUBMIT: "{{ dci_cvp_submit | default(false) }}"
+    dci_cvp_bundle_spec:  "{{ cvp_bundle_spec }}"
+    dci_cvp_bundle_tag: "{{ cvp_bundle_tag }}"
+    dci_cvp_pullsecret_file: "{{ dci_pullsecret_file }}"
+    dci_cvp_registry_host: "{{ dci_registry_host }}"
     dci_cvp_cache_dir: "{{ dci_cache_dir }}"
     dci_cvp_cs_url: "{{ dci_cs_url }}"
     dci_cvp_client_id: "{{ dci_client_id }}"
     dci_cvp_api_secret: "{{ dci_api_secret }}"
+    dci_cvp_pyxis_submit: "{{ pyxis_cvp_submit }}"
+    dci_cvp_pyxis_apikey: "{{ pyxis_apikey }}"
+    dci_cvp_pyxis_identifier: "{{ pyxis_identifier }}"
   when:
-    - dci_cvp_bundle_spec is defined
-    - dci_cvp_package is defined
-    - dci_cvp_channel is defined
+    - cvp_bundle_spec is defined
 ...
 ```
 

@@ -11,4 +11,5 @@
   register: dci_cvp_operator_clone
   retries: 3
   delay: 10
+  until: not dci_cvp_operator_clone.failed
 ...

@@ -1,95 +1,151 @@
 ---
-- name: "Fetch CVP Operator Test Playbooks"
-  include_tasks: fetch_cvp_operator.yml
-
-- name: Create temporary cvp_logs directory
+- name: Create temporary dci_cvp directory
   tempfile:
     state: directory
-    suffix: dci_cvp_logs
-  register: dci_cvp_logs
+    suffix: dci_cvp
+  register: dci_cvp
+
 - set_fact:
-    OO_INSTALL_NAMESPACE: "DCI_CVP"
-    ARTIFACT_DIR: "{{ dci_cvp_logs.path }}"
+    dci_cvp_error_detected: false
+    OO_INSTALL_NAMESPACE: "!create"
+    dci_cvp_logs: "{{ dci_cvp.path }}/logs"
+    ARTIFACT_DIR: "{{ dci_cvp.path }}/logs"
+    work_dir: "{{ dci_cvp.path }}"
 
-# Mirror OO_BUNDLE_IMAGE, FIXME
-# - name: "Mirror Bundle image"
-#   include_task: mirror_bundle_image.yml
-#   when: disconnected_mode is defined
-
-# Set Start Time
-- name: "Get Deployment start time"
-  command: "date -u '+%Y-%m-%dT%H:%M:%SZ'"
-  register: dci_cvp_start_time
-- name: "Set Deployment start time"
-  set_fact:
-    deployment_start_time: "{{ dci_cvp_start_time.stdout }}"
-
-# CVP Operator tests
-- name: "Fetch CVP Operator Test Playbooks"
-  include_tasks: run_cvp_operator.yml
-
-# Archive logs
-- name: Archive cvp logs
-  archive:
-    path: "{{ dci_cvp_logs.path }}"
-    dest: "{{ dci_cvp_logs.path }}.tgz"
-
-# Upload logs
-- name: Upload logs to DCI Control Server
-  environment:
-    - DCI_CLIENT_ID: "{{ dci_cvp_client_id }}"
-    - DCI_API_SECRET: "{{ dci_cvp_api_secret }}"
-    - DCI_CS_URL: "{{ dci_cvp_cs_url }}"
-  dci_file:
-    path: "{{ item }}"
-    name: "{{ item | basename }}"
-    job_id: "{{ job_id }}"
-  with_fileglob:
-    - "{{ dci_cvp_logs.path }}/*"
-    - "{{ dci_cvp_logs.path }}.tgz"
-  register: dci_cvp_upload_archive
-
-- name: Set Basename
-  set_fact:
-    dci_cvp_logs_filename: "{{ dci_cvp_logs.path | basename }}.tgz"
-- name: Set external_tests_link
-  set_fact:
-    dci_cvp_external_tests_link: "{{ dci_cvp_cs_url }}/api/v1/files/{{ item.file.id }}/content"
-  loop: "{{ dci_cvp_upload_archive.results }}"
-  when: item.file.name == dci_cvp_logs_filename
-
-# PyxIS submit
-# FIXME
-- name: Submit to PyxIs
-  uri:
-    url: "{{ dci_cvp_catalog_url }}/projects/certification/id/{{ identifier }}/requests/scans"
-    method: POST
-    headers:
-      Authorization: "Bearer {{ Bearer }}"
-    body_format: json
-    body: |
-      {
-        "_links": {
-          "cert_project": {
-            "href": "string"
-          }
-        },
-        "external_tests_link": "{{ dci_cvp_external_tests_link }}",
-        "pull_spec": "{{ OO_BUNDLE_SPEC }}",
-        "tag": "string"
-      }
-  when: dci_cvp_submit is true
-
-- name: Debug external_tests_link
-  debug:
-    var: dci_cvp_external_tests_link
-
-# Clean Up
-- name: "Clean up"
+- name: "Create directory for the logs"
   file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - "{{ dci_cvp_logs.path }}"
-    - "{{ dci_cvp_logs.path }}.tgz"
+    path: "{{ dci_cvp_logs }}"
+    state: directory
+    mode: 0744
+
+- name: Run DCI/CVP pipeline
+  block:
+    - name: "Fetch CVP Operator Test Playbooks"
+      include_tasks: fetch_cvp_operator.yml
+
+    - set_fact:
+        testing_bin_path: "{{ work_dir }}/bin"
+        operator_work_dir: "{{ work_dir }}/operator-files"
+        operator_bundle_dir: "{{ work_dir }}/operator-bundle"
+
+    - set_fact:
+        jq_bin_path: "{{ testing_bin_path }}/jq"
+        yq_bin_path: "{{ testing_bin_path }}/yq"
+        umoci_bin_path: "{{ testing_bin_path }}/umoci"
+        opm_bin_path: "{{ testing_bin_path }}/opm"
+        operator_sdk_bin_path: "{{ testing_bin_path }}/operator-sdk"
+        oc_bin_path: "{{ testing_bin_path }}/oc"
+        run_upstream: false
+
+    - name: "Install operator testing prerequisites"
+      include_role:
+        name: "{{ dci_cvp_cache_dir }}/cvp_operator_repo/roles/install_operator_prereqs"
+      vars:
+        bundle_image: "{{ dci_cvp_bundle_spec }}"
+
+    - name: "Mirror bundle and generate index"
+      include_tasks: mirror_bundle.yml
+
+    # Set Start Time
+    - name: "Get Deployment start time"
+      command: "date -u '+%Y-%m-%dT%H:%M:%SZ'"
+      register: dci_cvp_start_time
+    - name: "Set Deployment start time"
+      set_fact:
+        deployment_start_time: "{{ dci_cvp_start_time.stdout }}"
+
+    # CVP Operator tests
+    - name: "Run CVP Operator Test Playbooks"
+      include_tasks: run_cvp_operator.yml
+
+  rescue:
+    - name: Error detected
+      set_fact:
+        dci_cvp_error_detected: true
+    - name: Gather Extra
+      shell: "{{ lookup('file', 'gather-extra.sh') }}"
+      environment:
+        - ARTIFACT_DIR: "{{ ARTIFACT_DIR }}/gather_extra_logs"
+        - SHARED_DIR: "{{ ARTIFACT_DIR }}"
+
+  always:
+    # Archive logs
+    - name: Archive cvp logs
+      archive:
+        path: "{{ dci_cvp_logs }}"
+        dest: "{{ dci_cvp_logs }}.tgz"
+
+    # Upload logs
+    - name: Upload logs to DCI Control Server
+      environment:
+        - DCI_CLIENT_ID: "{{ dci_cvp_client_id }}"
+        - DCI_API_SECRET: "{{ dci_cvp_api_secret }}"
+        - DCI_CS_URL: "{{ dci_cvp_cs_url }}"
+      dci_file:
+        path: "{{ item }}"
+        name: "{{ item | basename }}"
+        job_id: "{{ job_id }}"
+      with_fileglob:
+        - "{{ dci_cvp_logs }}/*"
+        - "{{ dci_cvp_logs }}.tgz"
+      register: dci_cvp_upload_archive
+
+    - name: Set Basename
+      set_fact:
+        dci_cvp_logs_filename: "{{ dci_cvp_logs | basename }}.tgz"
+    - name: Set external_tests_link
+      set_fact:
+        dci_cvp_external_tests_link: "{{ dci_cvp_cs_url }}/api/v1/files/{{ item.file.id }}/content"
+      loop: "{{ dci_cvp_upload_archive.results }}"
+      when:
+        - "'file' in item"
+        - "'name' in item.file"
+        - item.file.name == dci_cvp_logs_filename
+
+    # PyxIS submit
+    - name: Run DCI/CVP pipeline
+      block:
+        - name: Submit to PyxIs
+          uri:
+            url: "{{ dci_cvp_catalog_url }}/v1/projects/certification/id/{{ dci_cvp_pyxis_identifier }}/requests/scans"
+            method: POST
+            headers:
+              X-API-KEY: "{{ dci_cvp_pyxis_apikey }}"
+            body_format: json
+            body: |
+              {
+                "external_tests_link": "{{ dci_cvp_external_tests_link }}",
+                "pull_spec": "{{ dci_cvp_bundle_spec }}",
+                "tag": "{{ dci_cvp_bundle_tag }}",
+              }
+            status_code: 201
+            timeout: 120
+          register: pyxis_scan_submit
+          retries: 3
+          delay: 10
+          until: not pyxis_scan_submit.failed
+          no_log: true
+          when:
+            - not dci_cvp_error_detected
+            - dci_cvp_pyxis_submit
+      rescue:
+        - name: Error detected
+          set_fact:
+            dci_cvp_error_detected: true
+
+    # Clean Up
+    - name: "Clean up"
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ dci_cvp_logs }}"
+        - "{{ dci_cvp_logs }}.tgz"
+        - "{{ dci_cvp.path }}"
+
+- name: Exit with fail if we detected a problem
+  fail:
+    msg: "Something went wrong, investigate the logs"
+  when:
+    - dci_cvp_error_detected
 ...
