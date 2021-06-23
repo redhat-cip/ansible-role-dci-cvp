@@ -2,3 +2,5 @@ dci_cvp_operator_repo: https://github.com/redhat-operator-ecosystem/operator-tes
 dci_cvp_operator_vers: HEAD
 dci_cvp_pyxis_submit: false
 dci_cvp_catalog_url: https://catalog.redhat.com/api/containers
+dci_cvp_mirror: false
+dci_cvp_oc_version: 4.6.36

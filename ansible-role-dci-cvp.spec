@@ -3,7 +3,7 @@
 
 Name:       ansible-role-dci-cvp
 Version:    0.0.1
-Release:    1%{?dist}
+Release:    1.VERS%{?dist}
 Summary:    ansible-role-dci-cvp
 License:    ASL 2.0
 URL:        https://github.com/redhat-cip/ansible-role-dci-cvp

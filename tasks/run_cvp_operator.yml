@@ -7,7 +7,7 @@
     # Operator subscribe
     - name: "Run operator subscribe step"
       include_role:
-        name: "{{ dci_cvp_cache_dir }}/cvp_operator_repo/roles/optional-operators-subscribe"
+        name: "{{ dci_cvp_cache_dir }}/cvp_operator_repo/roles/optional_operators_subscribe"
       vars:
         kubeconfig_path: "{{ dci_cvp_kubeconfig }}"
 

@@ -7,7 +7,7 @@
 
 - set_fact:
     dci_cvp_error_detected: false
-    OO_INSTALL_NAMESPACE: "!create"
+    OO_INSTALL_NAMESPACE: "{{ dci_cvp_namespace | default('!create') }}"
     dci_cvp_logs: "{{ dci_cvp.path }}/logs"
     ARTIFACT_DIR: "{{ dci_cvp.path }}/logs"
     work_dir: "{{ dci_cvp.path }}"
@@ -36,6 +36,7 @@
         operator_sdk_bin_path: "{{ testing_bin_path }}/operator-sdk"
         oc_bin_path: "{{ testing_bin_path }}/oc"
         run_upstream: false
+        oc_version: "{{ dci_cvp_oc_version }}"
 
     - name: "Install operator testing prerequisites"
       include_role:

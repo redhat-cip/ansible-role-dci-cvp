@@ -25,52 +25,81 @@
 
 - name: Set Channel and Package
   set_fact:
-    OO_BUNDLE: "{{ dci_cvp_registry_host }}/{{ dci_cvp_bundle_spec | regex_replace('[^/]*/(.+)$', '\\1') }}"
+    OO_BUNDLE: "{{ dci_cvp_bundle_spec }}"
     OO_CHANNEL: "{{ dci_cvp_manifest.Labels['operators.operatorframework.io.bundle.channel.default.v1'] }}"
     OO_PACKAGE: "{{ dci_cvp_manifest.Labels['operators.operatorframework.io.bundle.package.v1'] }}"
-- name: Set Index
-  set_fact:
-    OO_INDEX: "{{ OO_BUNDLE | regex_replace('(.+)@sha256:.+$', '\\1-index') }}:{{ dci_cvp_bundle_tag }}"
-
-# quay.io/rh-nfv-int/testpmd-operator-bundle:v0.2.3
-- name: Copy Operator bundle local
-  shell:
-    cmd: >
-      skopeo copy --all --authfile {{ dci_cvp_pullsecret_file }}
-      --dest-tls-verify=false docker://{{ dci_cvp_bundle_spec }}
-      "docker://{{ OO_BUNDLE }}"
-  register: dci_cvp_copy
-  retries: 5
-  delay: 5
-  until:
-    - dci_cvp_copy is not failed
-
-- name: Copy related images
-  shell:
-    cmd: >
-      skopeo copy --all --authfile {{ dci_cvp_pullsecret_file }}
-      --dest-tls-verify=false docker://{{ item }}
-      docker://{{ dci_cvp_registry_host }}/{{ item | regex_replace('[^/]*/(.+)$', '\1') }}
-  register: dci_cvp_copy
-  retries: 5
-  delay: 5
-  loop: "{{ dci_cvp_related_images| map(attribute='image')| list + dci_cvp_images| flatten(1) }}"
-  until:
-    - dci_cvp_copy is not failed
+    OO_INDEX: "{{ dci_cvp_registry_host }}/{{ dci_cvp_bundle_spec | regex_replace('[^/]*/(.+)@sha256:.+$', '\\1-index') }}:{{ dci_cvp_bundle_tag }}"
 
 # Generate Catalog Index
 - name: Generate Catalog Index
   command:
     cmd: >
-      opm index add --pull-tool podman --bundles {{ OO_BUNDLE }}
+      opm index add --pull-tool podman --bundles {{ dci_cvp_bundle_spec }}
       --tag {{ OO_INDEX }}
     chdir: "{{ dci_cvp.path }}"
   environment:
     - REGISTRY_AUTH_FILE: "{{ dci_cvp_pullsecret_file }}"
 
-
 - name: Push Catalog Index to local registry
   command:
     cmd: >
       podman push --authfile {{ dci_cvp_pullsecret_file }} {{ OO_INDEX }}
+
+- name: Mirror and apply Source Policy
+  block:
+    - name: Point to mirrored bundle
+      set_fact:
+        OO_BUNDLE: "{{ dci_cvp_registry_host }}/{{ dci_cvp_bundle_spec | regex_replace('[^/]*/(.+)$', '\\1') }}"
+        scorecard_config: "{{ lookup('file', dci_cvp_cache_dir + '/cvp_operator_repo/roles/operator_bundle_scorecard_tests/files/scorecard-basic-config.yml') | from_yaml }}"
+
+    - name: Set scorecard images
+      set_fact:
+        scorecard_images: "{{ scorecard_config.stages[0].tests | map(attribute='image') | list | unique }}"
+
+    - name: Mirror scorecard containers
+      command:
+        cmd: >
+          skopeo copy --all --authfile {{ dci_cvp_pullsecret_file }}
+          --dest-tls-verify=false docker://{{ item }}
+          docker://{{ dci_cvp_registry_host }}/{{ item | regex_replace('[^/]*/([^@|:]+)(@|:).+$', '\1') }}
+      loop: "{{ scorecard_images }}"
+
+    - name: Catalog Mirror
+      command:
+        cmd: >
+           {{ testing_bin_path }}/oc adm catalog mirror -a {{ dci_cvp_pullsecret_file }}
+           {{ OO_INDEX }} {{ dci_cvp_registry_host }} --to-manifests={{ dci_cvp.path }}/tmp_oc
+
+    - name: Append to imageContentSourcePolicy
+      blockinfile:
+        block: |
+          # Scorecard container
+            - mirrors:
+              - {{ dci_cvp_registry_host }}/{{ item | regex_replace('[^/]*/([^@|:]+)(@|:).+$', '\1') }}
+              source: {{ item | regex_replace('([^@|:]+)(@|:).+$', '\1') }}
+        path: "{{ dci_cvp.path }}/tmp_oc/imageContentSourcePolicy.yaml"
+      loop: "{{ scorecard_images }}"
+
+    - name: Apply Image Content Source Policy
+      k8s:
+        definition: "{{ lookup('file', dci_cvp.path + '/tmp_oc/imageContentSourcePolicy.yaml') }}"
+
+    - name: Delay for policy to apply
+      pause:
+        minutes: 1
+
+    - name: "Wait for ALL nodes to be in a Done state"
+      k8s_info:
+        api: v1
+        kind: Node
+      register: cluster_nodes
+      until:
+        - '"Working" not in ((cluster_nodes.resources == None) | ternary([], cluster_nodes.resources)) | json_query("[].metadata.annotations.\"machineconfiguration.openshift.io/state\"")'
+      retries: 240
+      delay: 10
+      failed_when:
+        - '"Degraded" in ((cluster_nodes.resources == None) | ternary([], cluster_nodes.resources)) | json_query("[].metadata.annotations.\"machineconfiguration.openshift.io/state\"")'
+
+  when:
+    - dci_cvp_mirror
 ...
