@@ -3,7 +3,7 @@
 
 Name:       ansible-role-dci-cvp
 Version:    0.0.1
-Release:    1.VERS%{?dist}
+Release:    2.VERS%{?dist}
 Summary:    ansible-role-dci-cvp
 License:    ASL 2.0
 URL:        https://github.com/redhat-cip/ansible-role-dci-cvp
@@ -36,5 +36,8 @@ cp -r files %{buildroot}%{_datadir}/dci/roles/dci-cvp
 
 
 %changelog
+* Wed Aug 24 2022 Bill Peck <bpeck@redhat.com> - 0.0.1-2
+- Rebuild for el9
+
 * Wed Apr 28 2021 Bill Peck <bpeck@redhat.com> - 0.0.1-1
 - Initial release
