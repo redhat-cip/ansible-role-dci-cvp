@@ -2,8 +2,8 @@
 %define _binary_payload w0.gzdio
 
 Name:       ansible-role-dci-cvp
-Version:    0.0.1
-Release:    2.VERS%{?dist}
+Version:    0.0.2
+Release:    1.VERS%{?dist}
 Summary:    ansible-role-dci-cvp
 License:    ASL 2.0
 URL:        https://github.com/redhat-cip/ansible-role-dci-cvp
@@ -21,13 +21,7 @@ An Ansible role that is used to automate cvp testing
 %build
 
 %install
-mkdir -p %{buildroot}%{_datadir}/dci/roles/dci-cvp
-chmod 755 %{buildroot}%{_datadir}/dci/roles/dci-cvp
-
-cp -r defaults %{buildroot}%{_datadir}/dci/roles/dci-cvp
-cp -r tasks %{buildroot}%{_datadir}/dci/roles/dci-cvp
-cp -r files %{buildroot}%{_datadir}/dci/roles/dci-cvp
-
+make install BUILDROOT=%{buildroot} DATADIR=%{_datadir}/dci
 
 %files
 %doc README.md
@@ -36,6 +30,9 @@ cp -r files %{buildroot}%{_datadir}/dci/roles/dci-cvp
 
 
 %changelog
+* Mon Sep 26 2022 Frederic Lepied <flepied@redhat.com> 0.0.2-1
+- use a Makefile to install
+
 * Wed Aug 24 2022 Bill Peck <bpeck@redhat.com> - 0.0.1-2
 - Rebuild for el9
 
