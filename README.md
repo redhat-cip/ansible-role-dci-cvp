@@ -1,3 +1,6 @@
+⚠️ **Note:** This project has been migrated to a new repository.
+Please visit the new location [here](https://github.com/distributedci/ansible-role-dci-cvp).
+
 # DCI Openshift CVP Role
 
 `ansible-role-dci-cvp` enables CVP operator tests in the Red Hat Distributed CI service.
